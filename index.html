@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contraste de fase: de la invisibilidad a la inversión</title>
+<style>
+  :root { --fg:#1d2433; --muted:#5b6475; --bg:#f4f6fa; --card:#fff; --line:#d9deea; --acc:#1f5fbf; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width:1100px; margin:0 auto; padding:18px 16px 30px; }
+  h1 { font-size:1.35rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 14px; }
+  .grid { display:grid; grid-template-columns: 400px 1fr; gap:14px; align-items:start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card h2 { font-size:.95rem; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  .imgwrap { position:relative; width:100%; max-width:372px; aspect-ratio:1/1; margin:0 auto; background:#000; }
+  #img { width:100%; height:100%; display:block; border-radius:4px; }
+  .rowline { position:absolute; left:0; right:0; top:50%; border-top:1px dashed rgba(255,60,60,.9); pointer-events:none; }
+  .rowtag { position:absolute; right:4px; top:calc(50% + 2px); font-size:11px; color:#ff6a6a; pointer-events:none; text-shadow:0 0 3px #000; }
+  .badge { display:inline-block; margin-top:10px; padding:4px 12px; border-radius:999px; font-weight:600; font-size:.9rem; color:#fff; }
+  .b-inv { background:#6b7280; } .b-pos { background:#1f7a3d; } .b-neg { background:#b3261e; } .b-zero { background:#a16207; }
+  .readout { margin-top:8px; font-variant-numeric: tabular-nums; color:var(--muted); font-size:.9rem; }
+  .readout b { color:var(--fg); }
+  canvas.plot { width:100%; height:150px; display:block; }
+  .legend { display:flex; gap:16px; font-size:.82rem; color:var(--muted); margin-top:4px; flex-wrap:wrap; }
+  .legend i { display:inline-block; width:22px; height:0; border-top:2px solid; vertical-align:middle; margin-right:5px; }
+  .controls { margin-top:14px; display:grid; grid-template-columns: 1fr 1fr; gap:10px 28px; }
+  @media (max-width: 700px) { .controls { grid-template-columns: 1fr; } }
+  .ctl label { display:flex; justify-content:space-between; font-weight:600; font-size:.92rem; }
+  .ctl label .v { font-variant-numeric: tabular-nums; font-weight:500; color:var(--acc); }
+  .ctl small { color:var(--muted); }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; align-items:center; }
+  button, select { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .chk { display:flex; gap:6px; align-items:center; font-size:.9rem; margin-left:auto; }
+  .note { margin-top:14px; font-size:.82rem; color:var(--muted); }
+  code { background:#eef1f7; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Contraste de fase: de la invisibilidad a la inversión</h1>
+  <p class="sub">Un objeto de fase (discos gaussianos) visto a través de una placa <code>H = a e<sup>iθ</sup></code> en el plano de Fourier.
+     Con <code>a = 1</code> y <code>θ = 0</code> el objeto es invisible; con <code>θ = +90°</code> se ve más claro que el fondo y con <code>θ = −90°</code> el contraste se invierte.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Imagen (irradiancia)</h2>
+      <div class="imgwrap">
+        <canvas id="img" width="128" height="128"></canvas>
+        <div class="rowline"></div><div class="rowtag">perfil</div>
+      </div>
+      <div><span id="badge" class="badge b-inv">Invisible</span></div>
+      <div class="readout" id="readout"></div>
+    </section>
+
+    <section>
+      <div class="card">
+        <h2>Perfil de fase del objeto, ϕ(x), sobre la línea roja</h2>
+        <canvas id="plotPhi" class="plot"></canvas>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>Perfil de irradiancia, I(x), sobre la línea roja</h2>
+        <canvas id="plotI" class="plot"></canvas>
+        <div class="legend">
+          <span><i style="border-color:#1f5fbf"></i>simulación</span>
+          <span><i style="border-color:#d9822b;border-top-style:dashed"></i>ecuación, placa puntual: a² + 2aϕ sin θ + ϕ²</span>
+          <span><i style="border-color:#8a8f99;border-top-style:dotted"></i>fondo</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:14px">
+    <div class="controls">
+      <div class="ctl">
+        <label for="sTheta"><span>Desfase de la placa, θ</span><span class="v" id="vTheta"></span></label>
+        <input id="sTheta" type="range" min="-180" max="180" step="1" value="90">
+      </div>
+      <div class="ctl">
+        <label for="sA"><span>Transmisión de la luz directa, a</span><span class="v" id="vA"></span></label>
+        <input id="sA" type="range" min="0" max="1" step="0.01" value="0.2">
+      </div>
+      <div class="ctl">
+        <label for="sW"><span>Ancho del anillo (fracción de la apertura)</span><span class="v" id="vW"></span></label>
+        <input id="sW" type="range" min="0" max="0.3" step="0.001" value="0.067">
+        <small>Zernike (1942b) considera adecuado 1/15, es decir 0,067.</small>
+      </div>
+      <div class="ctl">
+        <label for="sPhi"><span>Fase máxima del objeto, ϕ<sub>máx</sub></span><span class="v" id="vPhi"></span></label>
+        <input id="sPhi" type="range" min="0.01" max="1" step="0.01" value="0.2">
+      </div>
+    </div>
+
+    <div class="btns">
+      <button id="bPlay" class="primary">Animar</button>
+      <select id="selParam" aria-label="Parámetro a animar">
+        <option value="theta">θ</option>
+        <option value="a">a</option>
+        <option value="w">ancho del anillo</option>
+      </select>
+      <span style="color:var(--muted)">Ajustes:</span>
+      <button data-preset="bright">Campo claro</button>
+      <button data-preset="pos">Contraste de fase positivo</button>
+      <button data-preset="neg">Contraste de fase negativo</button>
+      <button data-preset="dark">Campo oscuro central</button>
+      <label class="chk"><input id="auto" type="checkbox" checked> Exposición automática</label>
+    </div>
+
+    <p class="note">
+      Modelo: FFT de 128×128 puntos. El objeto es <code>e<sup>iϕ</sup></code>, con siete discos gaussianos de ancho distinto y la misma ϕ<sub>máx</sub>.
+      La placa multiplica por <code>a e<sup>iθ</sup></code> un anillo de radio 25/32 de la apertura, de ancho ajustable, y por 1 fuera de él.
+      La iluminación es anular (20 puntos de fuente sobre el anillo) y la apertura es ideal: pasan todos los órdenes de difracción.
+      Con ancho 0 el anillo solo afecta a la luz directa y la irradiancia tiende a <code>I = a² + 2aϕ sin θ + ϕ²</code>; al ensancharlo,
+      la placa también desfasa la luz difractada de baja frecuencia y aparece el halo. Con exposición automática cada imagen se normaliza con su
+      propio contraste, como en la Figura 1; sin ella, <code>I = 1</code> corresponde a gris medio.
+    </p>
+  </section>
+</main>
+
+<script id="core">
+var PCore = (function () {
+  'use strict';
+  var N = 128, M = N * N, KP = 32, RING = 25;
+  var ROW = 64;
+  var DISCS = [[22,64,3],[56,64,5.5],[100,64,9],[30,24,4],[80,22,6],[30,104,5],[88,108,5]];
+  var BIG = 2;
+
+  // --- FFT radix-2 -------------------------------------------------------
+  var rev = new Uint32Array(N), bits = 7;
+  for (var i = 0; i < N; i++) { var r = 0; for (var b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b); rev[i] = r; }
+  var cosT = new Float64Array(N / 2), sinT = new Float64Array(N / 2);
+  for (var k = 0; k < N / 2; k++) { cosT[k] = Math.cos(2 * Math.PI * k / N); sinT[k] = Math.sin(2 * Math.PI * k / N); }
+  var tr = new Float64Array(N), ti = new Float64Array(N);
+  function fft1(inv) {
+    var i, j, a, b, size, half, step, start, kk, wr, wi, xr, xi, t;
+    for (i = 0; i < N; i++) { j = rev[i]; if (j > i) { t = tr[i]; tr[i] = tr[j]; tr[j] = t; t = ti[i]; ti[i] = ti[j]; ti[j] = t; } }
+    for (size = 2; size <= N; size <<= 1) {
+      half = size >> 1; step = N / size;
+      for (start = 0; start < N; start += size) {
+        for (j = 0, kk = 0; j < half; j++, kk += step) {
+          wr = cosT[kk]; wi = inv ? sinT[kk] : -sinT[kk];
+          a = start + j; b = a + half;
+          xr = tr[b] * wr - ti[b] * wi; xi = tr[b] * wi + ti[b] * wr;
+          tr[b] = tr[a] - xr; ti[b] = ti[a] - xi; tr[a] += xr; ti[a] += xi;
+        }
+      }
+    }
+  }
+  function fft2(re, im, inv) {
+    var x, y, off;
+    for (y = 0; y < N; y++) {
+      off = y * N;
+      for (x = 0; x < N; x++) { tr[x] = re[off + x]; ti[x] = im[off + x]; }
+      fft1(inv);
+      for (x = 0; x < N; x++) { re[off + x] = tr[x]; im[off + x] = ti[x]; }
+    }
+    for (x = 0; x < N; x++) {
+      for (y = 0; y < N; y++) { tr[y] = re[y * N + x]; ti[y] = im[y * N + x]; }
+      fft1(inv);
+      for (y = 0; y < N; y++) { re[y * N + x] = tr[y]; im[y * N + x] = ti[y]; }
+    }
+  }
+
+  // --- fuentes (puntos enteros sobre el anillo de radio RING) -------------
+  var SRC = [];
+  for (var dx = -RING; dx <= RING; dx++) for (var dy = -RING; dy <= RING; dy++)
+    if (dx * dx + dy * dy === RING * RING) SRC.push([dx, dy]);
+
+  // --- distancia al origen en frecuencia ---------------------------------
+  var dist = new Float64Array(M);
+  for (var iy = 0; iy < N; iy++) for (var ix = 0; ix < N; ix++) {
+    var fx = ix < N / 2 ? ix : ix - N, fy = iy < N / 2 ? iy : iy - N;
+    dist[iy * N + ix] = Math.sqrt(fx * fx + fy * fy);
+  }
+
+  var phi = new Float64Array(M), Fre = new Float64Array(M), Fim = new Float64Array(M);
+  var Pre = new Float64Array(M), Pim = new Float64Array(M), I = new Float64Array(M);
+  var ring = new Uint8Array(M), ringW = -1;
+  var sorted = new Float32Array(M);
+  var phiMax = 0;
+
+  function setObject(pm) {
+    phiMax = pm;
+    phi.fill(0);
+    for (var d = 0; d < DISCS.length; d++) {
+      var cx = DISCS[d][0], cy = DISCS[d][1], s = DISCS[d][2], inv2 = 1 / (2 * s * s), r = Math.ceil(5 * s);
+      for (var y = Math.max(0, Math.floor(cy) - r); y < Math.min(N, Math.floor(cy) + r + 1); y++)
+        for (var x = Math.max(0, Math.floor(cx) - r); x < Math.min(N, Math.floor(cx) + r + 1); x++)
+          phi[y * N + x] += pm * Math.exp(-((x - cx) * (x - cx) + (y - cy) * (y - cy)) * inv2);
+    }
+    for (var k = 0; k < M; k++) { Fre[k] = Math.cos(phi[k]); Fim[k] = Math.sin(phi[k]); }
+    fft2(Fre, Fim, false);
+  }
+
+  function setRing(w) {
+    if (w === ringW) return;
+    ringW = w;
+    var h = w * KP / 2 + 1e-9;
+    for (var k = 0; k < M; k++) ring[k] = Math.abs(dist[k] - RING) <= h ? 1 : 0;
+  }
+
+  // w: ancho del anillo como fracción de la apertura (KP píxeles de frecuencia)
+  function image(a, theta, w) {
+    setRing(w);
+    var hr = a * Math.cos(theta), hi = a * Math.sin(theta);
+    I.fill(0);
+    for (var s = 0; s < SRC.length; s++) {
+      var sx = SRC[s][0], sy = SRC[s][1];
+      for (var iy = 0; iy < N; iy++) {
+        var jy = iy - sy; if (jy < 0) jy += N; else if (jy >= N) jy -= N;
+        for (var ix = 0; ix < N; ix++) {
+          var jx = ix - sx; if (jx < 0) jx += N; else if (jx >= N) jx -= N;
+          var src = jy * N + jx, k = iy * N + ix, rr = Fre[src], ii = Fim[src];
+          if (ring[k]) { Pre[k] = rr * hr - ii * hi; Pim[k] = rr * hi + ii * hr; }
+          else { Pre[k] = rr; Pim[k] = ii; }
+        }
+      }
+      fft2(Pre, Pim, true);
+      for (var q = 0; q < M; q++) I[q] += Pre[q] * Pre[q] + Pim[q] * Pim[q];
+    }
+    var norm = 1 / (M * M * SRC.length), mn = Infinity, mx = -Infinity;
+    for (var p = 0; p < M; p++) { I[p] *= norm; sorted[p] = I[p]; if (I[p] < mn) mn = I[p]; if (I[p] > mx) mx = I[p]; }
+    sorted.sort();
+    return { I: I, bg: sorted[M >> 1], p995: sorted[Math.floor(0.995 * (M - 1))], min: mn, max: mx };
+  }
+
+  function analyticI(a, theta, ph) { return a * a + 2 * a * ph * Math.sin(theta) + ph * ph; }
+
+  return { N: N, ROW: ROW, BIG: BIG, DISCS: DISCS, KP: KP, RING: RING, nSources: SRC.length,
+           phi: phi, setObject: setObject, image: image, analyticI: analyticI };
+})();
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var N = PCore.N, ROW = PCore.ROW, BIG = PCore.BIG;
+  var $ = function (id) { return document.getElementById(id); };
+  var el = { th: $('sTheta'), a: $('sA'), w: $('sW'), ph: $('sPhi') };
+  var imgCanvas = $('img'), imgCtx = imgCanvas.getContext('2d'), imgData = imgCtx.createImageData(N, N);
+  var state = { theta: 90, a: 0.2, w: 0.067, phi: 0.2 };
+  var playing = false, dir = 1, lastT = 0, pending = false;
+
+  function f(v, d) { return v.toFixed(d).replace('.', ','); }
+  function fmtAxis(v) { var av = Math.abs(v); return av >= 100 ? f(v, 0) : av >= 10 ? f(v, 1) : av >= 1 ? f(v, 2) : av === 0 ? '0' : f(v, av >= 0.1 ? 2 : av >= 0.01 ? 3 : 4); }
+
+  function labels() {
+    var t = state.theta;
+    $('vTheta').textContent = (t > 0 ? '+' : '') + t.toFixed(0) + '° (' + f(t / 180, 2) + ' π rad)';
+    $('vA').textContent = f(state.a, 2);
+    $('vW').textContent = f(state.w, 3) + (Math.abs(state.w - 1 / 15) < 0.0006 ? ' (1/15)' : '');
+    $('vPhi').textContent = f(state.phi, 2) + ' rad';
+  }
+
+  function plot(canvas, series, ymax, hline) {
+    var dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+    if (canvas.width !== Math.round(W * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+    var c = canvas.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+    var L = 46, R = 8, T = 8, B = 22, pw = W - L - R, ph = H - T - B;
+    function X(i) { return L + i / (N - 1) * pw; }
+    function Y(v) { return T + ph - Math.max(-0.05 * ymax, Math.min(1.05 * ymax, v)) / ymax * ph; }
+    c.font = '11px system-ui,sans-serif'; c.fillStyle = '#5b6475'; c.strokeStyle = '#e1e5ee'; c.lineWidth = 1;
+    [0, 0.5, 1].forEach(function (u) {
+      var yy = Y(u * ymax); c.beginPath(); c.moveTo(L, yy); c.lineTo(L + pw, yy); c.stroke();
+      c.textAlign = 'right'; c.textBaseline = 'middle'; c.fillText(fmtAxis(u * ymax), L - 5, yy);
+    });
+    c.textAlign = 'center'; c.textBaseline = 'top';
+    [0, 32, 64, 96, 127].forEach(function (xv) { c.fillText(String(xv), X(xv), T + ph + 5); });
+    c.strokeStyle = '#8a8f99'; c.strokeRect(L, T, pw, ph);
+    if (hline !== undefined) {
+      c.save(); c.setLineDash([2, 3]); c.strokeStyle = '#8a8f99'; c.lineWidth = 1.2;
+      c.beginPath(); c.moveTo(L, Y(hline)); c.lineTo(L + pw, Y(hline)); c.stroke(); c.restore();
+    }
+    series.forEach(function (s) {
+      c.save(); c.strokeStyle = s.color; c.lineWidth = s.lw || 1.8; if (s.dash) c.setLineDash(s.dash);
+      c.beginPath();
+      for (var i = 0; i < N; i++) { var xx = X(i), yy = Y(s.y[i]); if (i === 0) c.moveTo(xx, yy); else c.lineTo(xx, yy); }
+      c.stroke(); c.restore();
+    });
+  }
+
+  function render() {
+    pending = false;
+    var th = state.theta * Math.PI / 180, a = state.a;
+    var res = PCore.image(a, th, state.w), I = res.I;
+
+    // imagen
+    var auto = $('auto').checked, scale = auto ? 1 / (1.2 * Math.max(res.p995, 1e-12)) : 0.5;
+    var d = imgData.data;
+    for (var k = 0; k < N * N; k++) {
+      var g = Math.max(0, Math.min(1, I[k] * scale)), v = Math.round(255 * g);
+      d[4 * k] = d[4 * k + 1] = d[4 * k + 2] = v; d[4 * k + 3] = 255;
+    }
+    imgCtx.putImageData(imgData, 0, 0);
+
+    // perfiles
+    var phiRow = new Float64Array(N), iRow = new Float64Array(N), aRow = new Float64Array(N);
+    for (var x = 0; x < N; x++) {
+      phiRow[x] = PCore.phi[ROW * N + x]; iRow[x] = I[ROW * N + x];
+      aRow[x] = PCore.analyticI(a, th, phiRow[x]);
+    }
+    plot($('plotPhi'), [{ y: phiRow, color: '#333' }], Math.max(state.phi * 1.15, 1e-3));
+    var ymax = 0; for (var i = 0; i < N; i++) ymax = Math.max(ymax, iRow[i], aRow[i]); ymax = Math.max(ymax, res.bg) * 1.15;
+    if (ymax < 1e-9) ymax = 1;
+    plot($('plotI'), [{ y: aRow, color: '#d9822b', dash: [6, 4], lw: 1.6 }, { y: iRow, color: '#1f5fbf' }], ymax, res.bg);
+
+    // contraste y estado
+    var cx = Math.round(PCore.DISCS[BIG][0]), cy = PCore.DISCS[BIG][1];
+    var Ic = I[cy * N + cx], bg = res.bg;
+    var C = (bg > 1e-6 && a >= 0.02) ? Ic / bg - 1 : NaN;
+    var phiC = PCore.phi[cy * N + cx];
+    var Can = a > 0.02 ? (PCore.analyticI(a, th, phiC) - a * a) / (a * a) : NaN;
+    var V = (res.max - res.min) / (res.max + res.min + 1e-300);
+    var cls, txt;
+    if (V < 0.02) { cls = 'b-inv'; txt = 'Invisible'; }
+    else if (!isFinite(C)) { cls = 'b-pos'; txt = 'Campo oscuro: objeto brillante sobre fondo negro'; }
+    else if (Math.abs(C) < 0.03) { cls = 'b-zero'; txt = 'Contraste casi nulo (cambio de signo)'; }
+    else if (C > 0) { cls = 'b-pos'; txt = 'Contraste positivo: objeto más claro que el fondo'; }
+    else { cls = 'b-neg'; txt = 'Contraste invertido: objeto más oscuro que el fondo'; }
+    var badge = $('badge'); badge.className = 'badge ' + cls; badge.textContent = txt;
+    $('readout').innerHTML = 'Fondo <b>I = ' + (bg < 1e-3 ? bg.toExponential(1).replace('.', ',') : f(bg, 3)) + '</b> · Disco grande: ' +
+      '<b>C = ' + (isFinite(C) ? f(C, 2) : '—') + '</b> (simulación), <b>' + (isFinite(Can) ? f(Can, 2) : '—') + '</b> (ecuación, placa puntual)';
+  }
+  function schedule() { if (!pending) { pending = true; requestAnimationFrame(render); } }
+
+  function syncControls() {
+    el.th.value = state.theta; el.a.value = state.a; el.w.value = state.w; el.ph.value = state.phi; labels();
+  }
+  function readControls() {
+    state.theta = +el.th.value; state.a = +el.a.value; state.w = +el.w.value;
+    var p = +el.ph.value; if (p !== state.phi) { state.phi = p; PCore.setObject(p); }
+    labels();
+  }
+  ['th', 'a', 'w', 'ph'].forEach(function (k) {
+    el[k].addEventListener('input', function () { if (playing) stop(); readControls(); schedule(); });
+  });
+  $('auto').addEventListener('change', schedule);
+
+  var PRESETS = {
+    bright: { theta: 0, a: 1 },
+    pos: { theta: 90, a: 0.2 },
+    neg: { theta: -90, a: 0.2 },
+    dark: { theta: 0, a: 0 }
+  };
+  document.querySelectorAll('[data-preset]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      stop(); var p = PRESETS[b.getAttribute('data-preset')];
+      state.theta = p.theta; state.a = p.a; syncControls(); schedule();
+    });
+  });
+
+  // animación: el parámetro elegido recorre su intervalo de ida y vuelta
+  var RANGES = { theta: [-180, 180, 36], a: [0, 1, 0.2], w: [0, 0.3, 0.06] };  // min, max, velocidad por segundo
+  function stop() { playing = false; $('bPlay').textContent = 'Animar'; }
+  function frame(t) {
+    if (!playing) return;
+    var dt = Math.min(0.1, (t - lastT) / 1000); lastT = t;
+    var key = $('selParam').value, r = RANGES[key], v = state[key] + dir * r[2] * dt;
+    if (v >= r[1]) { v = r[1]; dir = -1; } else if (v <= r[0]) { v = r[0]; dir = 1; }
+    state[key] = v; syncControls(); render();
+    requestAnimationFrame(frame);
+  }
+  $('bPlay').addEventListener('click', function () {
+    if (playing) { stop(); return; }
+    playing = true; $('bPlay').textContent = 'Pausa'; lastT = performance.now(); requestAnimationFrame(frame);
+  });
+  $('selParam').addEventListener('change', function () { dir = 1; });
+
+  window.addEventListener('resize', schedule);
+  PCore.setObject(state.phi);
+  syncControls();
+  render();
+})();
+</script>
+</body>
+</html>
